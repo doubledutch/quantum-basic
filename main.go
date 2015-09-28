@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/doubledutch/lager"
 	"github.com/doubledutch/mux/gob"
@@ -13,17 +14,17 @@ import (
 )
 
 const (
-	defaultPort      = ":8877"
+	defaultAddr      = "localhost:8877"
 	defaultLogLevels = "IE"
 )
 
 func main() {
-	port := os.Getenv("BASIC_PORT")
-	if port == "" {
-		port = defaultPort
+	addr := os.Getenv("LISTEN_ADDR")
+	if addr == "" {
+		addr = defaultAddr
 	}
 
-	logLevels := os.Getenv("BASIC_LOG_LEVELS")
+	logLevels := os.Getenv("LOG_LEVELS")
 	if logLevels == "" {
 		logLevels = defaultLogLevels
 	}
@@ -40,8 +41,17 @@ func main() {
 		},
 	}
 
+	tlsConfig, err := agent.NewTLSConfigFromEnv()
+	if err == nil {
+		lgr.Debugf("Using the provided TLS configuration")
+		cc.TLSConfig = tlsConfig
+		cc.Timeout = 10 * time.Second
+	} else if err != agent.ErrProvideAllCertFiles {
+		log.Fatalf("Err creating TLS config: %s", err)
+	}
+
 	config := &agent.Config{
-		Port:       port,
+		Addr:       addr,
 		ConnConfig: cc,
 	}
 
