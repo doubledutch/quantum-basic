@@ -4,12 +4,15 @@ import (
 	"log"
 	"os"
 
+	"github.com/doubledutch/go-env"
 	"github.com/doubledutch/lager"
 	"github.com/doubledutch/mux/gob"
 	"github.com/doubledutch/quantum"
 	"github.com/doubledutch/quantum-basic/basic"
 	"github.com/doubledutch/quantum-basic/remote"
 	"github.com/doubledutch/quantum/agent"
+	"github.com/doubledutch/quantum/consul"
+	"github.com/doubledutch/quantum/inmemory"
 )
 
 const (
@@ -17,21 +20,34 @@ const (
 	defaultLogLevels = "IE"
 )
 
-func main() {
-	port := os.Getenv("BASIC_PORT")
-	if port == "" {
-		port = defaultPort
-	}
+var (
+	port       string
+	logLevels  string
+	consulHTTP string
+)
 
-	logLevels := os.Getenv("BASIC_LOG_LEVELS")
-	if logLevels == "" {
-		logLevels = defaultLogLevels
-	}
+func main() {
+	env.StringVar(&port, "LISTEN_PORT", defaultPort, "port to listen on")
+	env.StringVar(&logLevels, "LOG_LEVELS", defaultLogLevels, "levels to log")
+	env.StringVar(&consulHTTP, "CONSUL_HTTP", "", "consul http address")
+	env.Parse()
 
 	lgr := lager.NewLogLager(&lager.LogConfig{
 		Levels: lager.LevelsFromString(logLevels),
 		Output: os.Stdout,
 	})
+
+	registrators := []quantum.Registrator{inmemory.NewRegistrator()}
+
+	if consulHTTP != "" {
+		crg := consul.NewRegistrator(consulHTTP, lgr)
+		registrators = append(registrators, crg)
+		lgr.Debugf("Registered consul registrator")
+	}
+
+	mrg := &quantum.MultiRegistrator{
+		Registrators: registrators,
+	}
 
 	cc := &quantum.ConnConfig{
 		Config: &quantum.Config{
@@ -40,9 +56,13 @@ func main() {
 		},
 	}
 
+	registry := inmemory.NewRegistry(lgr)
+
 	config := &agent.Config{
-		Port:       port,
-		ConnConfig: cc,
+		ConnConfig:  cc,
+		Port:        port,
+		Registry:    registry,
+		Registrator: mrg,
 	}
 
 	srv := agent.New(config)
